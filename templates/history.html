@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Історія даних</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+  <style>
+    body {font-family: Arial, sans-serif; margin: 20px; background:#f8f9fa;}
+    h1 {text-align:center;}
+    .controls {text-align:center; margin:40px 0; padding:20px; background:white; border-radius:10px; box-shadow:0 4px 15px rgba(0,0,0,0.1);}
+    input {padding:10px; font-size:16px; margin:0 10px;}
+    button {padding:12px 30px; font-size:16px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer;}
+    button:hover {background:#0056b3;}
+    canvas {background:white; border-radius:10px; box-shadow:0 4px 15px rgba(0,0,0,0.1); margin-top:20px;}
+    .nav {text-align:center; margin:20px 0;}
+    .nav a {margin:0 15px; font-size:18px;}
+  </style>
+</head>
+<body>
+  <h1>Історія даних (вибір періоду)</h1>
+
+  <div class="nav">
+    <a href="/">Онлайн моніторинг</a> • <b>Історія</b>
+  </div>
+
+  <div class="controls">
+    <label>Від: <input type="datetime-local" id="start"></label>
+    <label>До:   <input type="datetime-local" id="end"></label>
+    <button onclick="loadHistory()">Показати</button>
+  </div>
+
+  <canvas id="historyChart"></canvas>
+
+  <script>
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    let chart = null;
+
+    // ініціалізуємо календарі останніми 7 днями
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7*24*60*60*1000);
+    document.getElementById('end').value = now.toISOString().slice(0,16);
+    document.getElementById('start').value = weekAgo.toISOString().slice(0,16);
+
+    function loadHistory() {
+      const start = document.getElementById('start').value;
+      const end   = document.getElementById('end').value;
+
+      if (!start || !end) {
+        alert("Виберіть обидві дати");
+        return;
+      }
+
+      fetch(`/api/history?start=${start}&end=${end}`)
+        .then(r => r.json())
+        .then(data => {
+          const times = data.map(d => d.timestamp);
+          if (chart) chart.destroy();
+
+          chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: times,
+              datasets: [
+                {label: 'Температура °C',      data: data.map(d=>d.temp), borderColor: '#e74c3c', tension: 0.3},
+                {label: 'Вологість повітря %', data: data.map(d=>d.hum),  borderColor: '#3498db', tension: 0.3},
+                {label: 'Ґрунт (raw)',         data: data.map(d=>d.soil), borderColor: '#2ecc71', tension: 0.3, yAxisID: 'y2'}
+              ]
+            },
+            options: {
+              scales: {
+                x: {type: 'time', time: {unit: 'hour', displayFormats: {hour: 'dd MMM HH:mm'}}},
+                y:  {position: 'left',  title: {display: true, text: 'Температура / Вологість'}},
+                y2: {position: 'right', title: {display: true, text: 'Ґрунт (0-4095)'}, grid: {drawOnChartArea: false}}
+              },
+              plugins: {
+                title: {display: true, text: `Період: ${new Date(start).toLocaleString()} — ${new Date(end).toLocaleString()}`}
+              }
+            }
+          });
+        })
+        .catch(err => alert("Помилка: " + err));
+    }
+
+    // Завантажуємо одразу при відкритті сторінки
+    loadHistory();
+  </script>
+</body>
+</html>
