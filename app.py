@@ -1,44 +1,41 @@
-from flask import Flask, request, jsonify, render_template
-from database import db, Measurement
+# ... весь твій попередній код залишається без змін ...
+
 from datetime import datetime
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Нова сторінка історії
+@app.route('/history')
+def history_page():
+    return render_template('history.html')
 
-db.init_app(app)
+# Новий API — повертає дані тільки за вибраний період
+@app.route('/api/history')
+def api_history():
+    start_str = request.args.get('start')
+    end_str   = request.args.get('end')
 
-with app.app_context():
-    db.create_all()
+    if not start_str or not end_str:
+        return jsonify([])
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/data', methods=['POST'])
-def receive_data():
     try:
-        data = request.get_json(force=True)
-        print(f"Отримано дані: {data}")
+        start_dt = datetime.fromisoformat(start_str.replace('Z', '+00:00'))
+        end_dt   = datetime.fromisoformat(end_str.replace('Z', '+00:00'))
+    except:
+        return jsonify([]), 400
 
-        m = Measurement(
-            soil=int(data['soil']),
-            temp=float(data['temp']),
-            hum=float(data['hum'])
-        )
-        db.session.add(m)
-        db.session.commit()
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        print(f"Помилка: {e}")
-        return jsonify({"error": str(e)}), 400
+    all_data = []
+    db_files = sorted([f for f in os.listdir(DB_DIR) if f.endswith('.db')])
 
-@app.route('/api/data')
-def api_data():
-    limit = request.args.get('limit', 1000, type=int)
-    measurements = Measurement.query.order_by(Measurement.timestamp.desc()).limit(limit).all()
-    measurements.reverse()
-    return jsonify([m.to_dict() for m in measurements])
+    for db_file in db_files:
+        db_path = os.path.join(DB_DIR, db_file)
+        try:
+            db = get_db(db_path)
+            measurements = db.session.query(Measurement)\
+                .filter(Measurement.timestamp >= start_dt)\
+                .filter(Measurement.timestamp <= end_dt)\
+                .order_by(Measurement.timestamp).all()
+            all_data.extend([m.to_dict() for m in measurements])
+            db.session.close()
+        except:
+            continue
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    return jsonify(all_data)
